@@ -8,4 +8,5 @@
 
 protocol ScaleableCollectionItemDelegate: class {
     var scale: CGFloat{get set}
+//    func centerOn(_ point: CGPoint, inView: UIView)
 }

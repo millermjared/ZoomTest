@@ -9,10 +9,57 @@
 import UIKit
 
 
+//TODO move to CGExtensions file
+extension CGSize : ExpressibleByStringLiteral {
+    public typealias ExtendedGraphemeClusterLiteralType = StringLiteralType
+    
+    public init(stringLiteral value: StringLiteralType) {
+        self.init()
+        
+        let size: CGSize;
+        if value[value.startIndex] != "{" {
+            size = NSCoder.cgSize(for: "{\(value)}")
+        } else {
+            size = NSCoder.cgSize(for: value)
+        }
+        self.width = size.width;
+        self.height = size.height;
+    }
+    
+    func scaledTo(width: CGFloat)->CGSize {
+        let scale = width/self.width
+        return CGSize(width: self.width*scale, height: self.height*scale)
+    }
+    
+}
+
+enum PageSize: CGSize {
+    case A4Portrait = "595, 842"
+    case A4Landscape = "842, 595"
+}
+
+extension CGSize {
+    func scaledBy(width: CGFloat, height: CGFloat)->CGSize {
+        return CGSize(width: self.width*width, height: self.height*height)
+    }
+}
+
+extension CGPoint {
+    func scaledBy(x: CGFloat, y: CGFloat)->CGPoint {
+        return CGPoint(x: self.x*x, y: self.y*y)
+    }
+}
+
+
 
 class PanAndZoomCollectionLayout: UICollectionViewLayout {
     
-    var layout: [UICollectionViewLayoutAttributes] = []
+    var layout: [UICollectionViewLayoutAttributes]?
+    var estimatedItemSize = PageSize.A4Portrait
+    var rowSpacing: CGFloat = 10.0
+    
+    var cumulativeHeight: CGFloat = 0.0
+    var maximumWidth: CGFloat = 0.0
     
     required init?(coder aDecoder: NSCoder) {
         super.init(coder: aDecoder)
@@ -20,15 +67,29 @@ class PanAndZoomCollectionLayout: UICollectionViewLayout {
     
     override func prepare() {
         
-        for i in 0..<(collectionView?.numberOfItems(inSection: 0) ?? 0) {
-            let indexPath = IndexPath(item: i, section: 0)
-            let attribs = UICollectionViewLayoutAttributes(forCellWith: indexPath)
-            
-            attribs.frame = CGRect(x: 0, y: i*1034, width: 760, height: 1024)
-            attribs.zIndex = 1000
-            attribs.size = CGSize(width: 760, height: 1024)
-            
-            layout.append(attribs)
+        if layout == nil {
+            layout = [UICollectionViewLayoutAttributes]()
+            for i in 0..<(collectionView?.numberOfItems(inSection: 0) ?? 0) {
+                
+                let indexPath = IndexPath(item: i, section: 0)
+                let attribs = UICollectionViewLayoutAttributes(forCellWith: indexPath)
+                
+                attribs.zIndex = 1000
+                attribs.size = PageSize.A4Portrait.rawValue//.scaledTo(width: estimatedItemSize.rawValue.width)
+                attribs.center = CGPoint(x: (collectionView?.frame.size.width ?? 0.0)/2.0, y: CGFloat(i)*rowSpacing + cumulativeHeight + attribs.size.height/2.0)
+                
+                cumulativeHeight += attribs.size.height
+                layout?.append(attribs)
+            }
+        } else if let layout = layout {
+            for i in 0..<(collectionView?.numberOfItems(inSection: 0) ?? 0) {
+                
+                let attribs = layout[i]
+                let currentFrame = attribs.frame
+                attribs.frame = CGRect(x: 0.0, y: cumulativeHeight, width: currentFrame.width, height: currentFrame.height)
+
+                cumulativeHeight += currentFrame.height
+            }
         }
         
         // Note: call super last if we set itemSize
@@ -36,7 +97,7 @@ class PanAndZoomCollectionLayout: UICollectionViewLayout {
     }
     
     override var collectionViewContentSize: CGSize {
-        return CGSize(width: 760*_scale, height: 1024.0*CGFloat(collectionView?.numberOfItems(inSection: 0) ?? 1)*_scale)
+        return CGSize(width: maximumWidth*_scale, height: cumulativeHeight*_scale)
     }
     
     let kScaleBoundLower: CGFloat = 0.5
@@ -46,94 +107,71 @@ class PanAndZoomCollectionLayout: UICollectionViewLayout {
     
     override func layoutAttributesForItem(at indexPath: IndexPath) -> UICollectionViewLayoutAttributes? {
         
-        guard indexPath.item < layout.count else {return nil}
+        guard indexPath.item < layout?.count ?? 0 else {return nil}
         
-        let attribs = layout[indexPath.item].copy(with: nil) as! UICollectionViewLayoutAttributes
+        if let attribs = layout?[indexPath.item].copy(with: nil) as? UICollectionViewLayoutAttributes {
             
-        attribs.frame = attribs.frame.applying(scaleTransform)
-        attribs.size = attribs.frame.size
-        
-        return attribs
+            attribs.size = attribs.size.applying(scaleTransform)
+            attribs.center = attribs.center.applying(scaleTransform)
+            
+            return attribs
+        } else {
+            return nil
+        }
     }
     
     override func layoutAttributesForElements(in rect: CGRect) -> [UICollectionViewLayoutAttributes]? {
+
+        guard let layout = layout else {return nil}
         
-        let index = Int(rect.minY/1024.0)
-        let cellCount = Int(rect.height/1024.0)
+        let scaledHeight = estimatedItemSize.rawValue.height*_scale
+        
+        let index = Int(rect.minY/scaledHeight)
+        let cellCount = Int(rect.height/scaledHeight)
+        
+        let start = max(0, index-1)
 
         var collectedAttribs = [UICollectionViewLayoutAttributes]()
-        for i in index..<(index+cellCount) {
+        
+        guard start < (index+cellCount) else {return nil}
+        
+        for i in start...(index+cellCount) {
             guard i>=0 && i<layout.count else {
                 continue
             }
             
             let attribs = layout[i].copy(with: nil) as! UICollectionViewLayoutAttributes
             
-            attribs.frame = attribs.frame.applying(scaleTransform)
+            let transformedFrame = attribs.frame.applying(scaleTransform)
+            
+            attribs.frame = transformedFrame.offsetBy(dx: -1*transformedFrame.minX, dy: 0.0)
             attribs.size = attribs.frame.size
+            attribs.center = CGPoint(x: collectionView?.frame.midX ?? transformedFrame.midX, y: transformedFrame.midY)
             
             collectedAttribs.append(attribs)
         }
         
         return collectedAttribs
     }
-}
 
-
-
-
-class PanAndZoomCollectionLayoutBckup: UICollectionViewFlowLayout {
-
-    required init?(coder aDecoder: NSCoder) {
-        super.init(coder: aDecoder)
-    }
-    
-    
-    override func prepare() {
-        scrollDirection = .vertical
-        minimumInteritemSpacing = 1
-        minimumLineSpacing = 10
-        sectionInset = UIEdgeInsets(top: 0, left: 0, bottom: self.minimumLineSpacing, right: 0)
-        let collectionViewWidth = self.collectionView?.bounds.size.width ?? 0
-        headerReferenceSize = CGSize(width: collectionViewWidth, height: 40)
-        
-        // cell size
-        let itemWidth: CGFloat = 768.0
-        self.itemSize = CGSize(width: itemWidth*_scale, height: 1024.0*_scale)
-        
-        // Note: call super last if we set itemSize
-        super.prepare()
-    }
-    
-    override var collectionViewContentSize: CGSize {
-        return CGSize(width: 768*_scale, height: 2048*_scale)
-    }
-    
-    let kScaleBoundLower: CGFloat = 0.5
-    let kScaleBoundUpper: CGFloat = 2.0
-    var _scale: CGFloat = 1.0
-    
-    override func layoutAttributesForItem(at indexPath: IndexPath) -> UICollectionViewLayoutAttributes? {
-        guard let layoutAttributes = super.layoutAttributesForItem(at: indexPath) else { return nil }
-        guard let collectionView = collectionView else { return nil }
-        layoutAttributes.bounds.size.width = collectionView.safeAreaLayoutGuide.layoutFrame.width - sectionInset.left - sectionInset.right
-        return layoutAttributes
-    }
-    
-    override func layoutAttributesForElements(in rect: CGRect) -> [UICollectionViewLayoutAttributes]? {
-        guard let superLayoutAttributes = super.layoutAttributesForElements(in: rect) else { return nil }
-        guard scrollDirection == .vertical else { return superLayoutAttributes }
-        
-        let computedAttributes = superLayoutAttributes.compactMap { layoutAttribute in
-            return layoutAttribute.representedElementCategory == .cell ? layoutAttributesForItem(at: layoutAttribute.indexPath) : layoutAttribute
+    func setNativeSize(_ size: CGSize, forIndexPath indexPath: IndexPath) {
+        if let attribs = layout?[indexPath.item] {
+            cumulativeHeight -= attribs.size.height
+            attribs.size = size
+            cumulativeHeight += attribs.size.height
+            if attribs.size.width > maximumWidth {
+                maximumWidth = attribs.size.width
+            }
         }
-        return computedAttributes
     }
 
-    
+    //TODO think about this one - this is for self-sizing cells
+    override func shouldInvalidateLayout(forPreferredLayoutAttributes preferredAttributes: UICollectionViewLayoutAttributes, withOriginalAttributes originalAttributes: UICollectionViewLayoutAttributes) -> Bool {
+        return false
+    }
 }
 
-extension PanAndZoomCollectionLayout: ScaleableCollectionItemDelegate {
+extension PanAndZoomCollectionLayout: ScaleableCollectionItemDelegate {    
     
     var scale: CGFloat {
         get {
@@ -164,10 +202,15 @@ extension PanAndZoomCollectionLayout: ScaleableCollectionItemDelegate {
         
         if _scale != originalScale {
             
+            if let offset = collectionView?.contentOffset {
+                let relativeScale = 1.0 + _scale - originalScale
+                collectionView?.contentOffset = offset.scaledBy(x: relativeScale, y: relativeScale)
+            }
+            
             let size = collectionView?.frame.size ?? .zero
             
             scaleTransform = CGAffineTransform.identity.translatedBy(x: size.width/2.0, y: size.height/2.0).scaledBy(x: _scale, y: _scale).translatedBy(x: -size.width/2.0, y: -size.height/2.0)
-            
+                        
             invalidateLayout()
         }
     }

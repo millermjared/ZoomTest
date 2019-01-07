@@ -21,7 +21,7 @@ class ViewController: UIViewController {
         if let layout = collectionView.collectionViewLayout as? UICollectionViewFlowLayout {
             layout.estimatedItemSize = CGSize(width: 500, height: 500)
         }
-        collectionView.contentInsetAdjustmentBehavior = .never
+//        collectionView.contentInsetAdjustmentBehavior = .automatic
     }
 }
 
@@ -31,7 +31,7 @@ extension ViewController: UICollectionViewDelegate {
 
 extension ViewController: UICollectionViewDataSource {
     func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
-        return 10
+        return 10000
     }
     
     func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
@@ -40,6 +40,7 @@ extension ViewController: UICollectionViewDataSource {
         cell.imageView.viewToScaleAndPan = collectionView
         if let layout = collectionView.collectionViewLayout as? PanAndZoomCollectionLayout {
             cell.imageView.delegate = layout
+            print(cell.imageView.image?.size)
             cell.pageNumber.text = "Page \(indexPath.item)"
         }
 
