@@ -67,6 +67,8 @@ class PanAndZoomCollectionLayout: UICollectionViewLayout {
     
     override func prepare() {
         
+        cumulativeHeight = 0.0
+        
         if layout == nil {
             layout = [UICollectionViewLayoutAttributes]()
             for i in 0..<(collectionView?.numberOfItems(inSection: 0) ?? 0) {
@@ -75,22 +77,30 @@ class PanAndZoomCollectionLayout: UICollectionViewLayout {
                 let attribs = UICollectionViewLayoutAttributes(forCellWith: indexPath)
                 
                 attribs.zIndex = 1000
-                attribs.size = PageSize.A4Portrait.rawValue//.scaledTo(width: estimatedItemSize.rawValue.width)
+                attribs.size = PageSize.A4Portrait.rawValue
                 attribs.center = CGPoint(x: (collectionView?.frame.size.width ?? 0.0)/2.0, y: CGFloat(i)*rowSpacing + cumulativeHeight + attribs.size.height/2.0)
                 
                 cumulativeHeight += attribs.size.height
+                maximumWidth = max(maximumWidth, attribs.size.width)
                 layout?.append(attribs)
             }
         } else if let layout = layout {
             for i in 0..<(collectionView?.numberOfItems(inSection: 0) ?? 0) {
                 
                 let attribs = layout[i]
-                let currentFrame = attribs.frame
-                attribs.frame = CGRect(x: 0.0, y: cumulativeHeight, width: currentFrame.width, height: currentFrame.height)
 
-                cumulativeHeight += currentFrame.height
+                attribs.center = CGPoint(x: (collectionView?.frame.size.width ?? 0.0)/2.0, y: CGFloat(i)*rowSpacing + cumulativeHeight + attribs.size.height/2.0)
+                
+                cumulativeHeight += attribs.size.height
+                maximumWidth = max(maximumWidth, attribs.size.width)
             }
         }
+        
+            if let firstCell = layout?.first {
+                let scaledSize = firstCell.size.applying(scaleTransform)
+                let scaledCenter = firstCell.center.applying(scaleTransform)
+                verticalOffset = scaledCenter.y - scaledSize.height/2.0
+            }
         
         // Note: call super last if we set itemSize
         super.prepare()
@@ -99,11 +109,18 @@ class PanAndZoomCollectionLayout: UICollectionViewLayout {
     override var collectionViewContentSize: CGSize {
         return CGSize(width: maximumWidth*_scale, height: cumulativeHeight*_scale)
     }
+
+    var verticalOffset: CGFloat = 0.0
+    
+    var horizontalCenter: CGFloat {
+        return max(maximumWidth*scale/2.0, (collectionView?.frame.width ?? 0.0)/2.0)
+    }
     
     let kScaleBoundLower: CGFloat = 0.5
     let kScaleBoundUpper: CGFloat = 2.0
     var _scale: CGFloat = 1.0
     var scaleTransform = CGAffineTransform.identity
+    
     
     override func layoutAttributesForItem(at indexPath: IndexPath) -> UICollectionViewLayoutAttributes? {
         
@@ -112,7 +129,8 @@ class PanAndZoomCollectionLayout: UICollectionViewLayout {
         if let attribs = layout?[indexPath.item].copy(with: nil) as? UICollectionViewLayoutAttributes {
             
             attribs.size = attribs.size.applying(scaleTransform)
-            attribs.center = attribs.center.applying(scaleTransform)
+            let verticalCenter = attribs.center.applying(scaleTransform)
+            attribs.center = CGPoint(x: horizontalCenter, y: verticalCenter.y - verticalOffset)
             
             return attribs
         } else {
@@ -127,7 +145,7 @@ class PanAndZoomCollectionLayout: UICollectionViewLayout {
         let scaledHeight = estimatedItemSize.rawValue.height*_scale
         
         let index = Int(rect.minY/scaledHeight)
-        let cellCount = Int(rect.height/scaledHeight)
+        let cellCount = Int(ceil(rect.height/scaledHeight))
         
         let start = max(0, index-1)
 
@@ -142,11 +160,10 @@ class PanAndZoomCollectionLayout: UICollectionViewLayout {
             
             let attribs = layout[i].copy(with: nil) as! UICollectionViewLayoutAttributes
             
-            let transformedFrame = attribs.frame.applying(scaleTransform)
+            attribs.size = attribs.size.applying(scaleTransform)
             
-            attribs.frame = transformedFrame.offsetBy(dx: -1*transformedFrame.minX, dy: 0.0)
-            attribs.size = attribs.frame.size
-            attribs.center = CGPoint(x: collectionView?.frame.midX ?? transformedFrame.midX, y: transformedFrame.midY)
+            let verticalCenter = attribs.center.applying(scaleTransform)
+            attribs.center = CGPoint(x: horizontalCenter, y: verticalCenter.y - verticalOffset)
             
             collectedAttribs.append(attribs)
         }

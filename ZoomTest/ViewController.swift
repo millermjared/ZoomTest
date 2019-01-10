@@ -40,7 +40,6 @@ extension ViewController: UICollectionViewDataSource {
         cell.imageView.viewToScaleAndPan = collectionView
         if let layout = collectionView.collectionViewLayout as? PanAndZoomCollectionLayout {
             cell.imageView.delegate = layout
-            print(cell.imageView.image?.size)
             cell.pageNumber.text = "Page \(indexPath.item)"
         }
 
